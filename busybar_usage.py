@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Mac system monitor: CPU, used memory, and available memory as live bars using busylib-py.
-   Modified version of https://github.com/maxswinkels/busybar-apps/tree/main/apps/mac-monitor
-   This sticks to more memory based stuff and allows a delay argument
 
     python app.py                        # BUSY Bar over USB (always 10.0.4.20)
     python app.py --host 127.0.0.1:8080  # emulator or a Wi-Fi bar
     python app.py --delay 1.5            # set a custom update delay in seconds
+    python app.py --disk                 # display disk space left on the bottom line
 """
 import subprocess
 import sys
@@ -13,6 +12,7 @@ import time
 import argparse
 import os
 import re
+import shutil
 from busylib import BusyBar, types
 
 APP = "mac-monitor"
@@ -103,6 +103,14 @@ def get_macos_memory():
     except Exception:
         return 0.0, 1.0
 
+def _disk_free_pct():
+    """Return free disk space % (0-100) as a float."""
+    try:
+        usage = shutil.disk_usage("/")
+        return min(100.0, (usage.free / usage.total) * 100.0)
+    except Exception:
+        return 0.0
+
 # ---------------------------------------------------------------------------
 # Display Logic using busylib
 # ---------------------------------------------------------------------------
@@ -110,7 +118,7 @@ def get_macos_memory():
 def _color(pct, invert=False):
     """Green / orange / red based on percentage. Mapped to text color names."""
     if invert:
-        # For Available Memory: lower is worse
+        # For Available Memory / Free Disk: lower is worse
         if pct <= 10:
             return "red"
         if pct <= 30:
@@ -124,15 +132,21 @@ def _color(pct, invert=False):
             return "orange"
         return "green"
 
-def tick(bb: BusyBar):
+def tick(bb: BusyBar, show_disk=False):
     cpu = _cpu_pct()
     mem = _mem_pct()
-    avail_gb, total_gb = get_macos_memory()
     
-    avl_pct = (avail_gb / total_gb * 100.0) if total_gb > 0 else 0.0
-
     _last["cpu"] = cpu
     _last["mem"] = mem
+
+    # Determine the last row based on the user's argument
+    if show_disk:
+        dsk_pct = _disk_free_pct()
+        last_row = (10, "DSK", dsk_pct, dsk_pct / 100.0, f"{round(dsk_pct)}%", True)
+    else:
+        avail_gb, total_gb = get_macos_memory()
+        avl_pct = (avail_gb / total_gb * 100.0) if total_gb > 0 else 0.0
+        last_row = (10, "AVL", avl_pct, avl_pct / 100.0, f"{avail_gb:.1f}G", True)
 
     elements = []
 
@@ -140,7 +154,7 @@ def tick(bb: BusyBar):
     for row_y, label, pct, frac, value_str, invert in (
         (0,  "CPU", cpu, cpu / 100.0, f"{round(cpu)}%", False),
         (5,  "MEM", mem, mem / 100.0, f"{round(mem)}%", False),
-        (10, "AVL", avl_pct, avl_pct / 100.0, f"{avail_gb:.1f}G", True),
+        last_row,
     ):
         col = _color(pct, invert)
 
@@ -202,11 +216,14 @@ def tick(bb: BusyBar):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Mac system monitor for Busy Bar.")
     parser.add_argument("--host", default="10.0.4.20", help="IP address of the Busy Bar or emulator.")
-    # Added delay argument here:
     parser.add_argument("--delay", type=float, default=0.25, help="Update delay in seconds.")
+    # Added argument for showing disk space
+    parser.add_argument("--disk", action="store_true", help="Show free disk space percentage instead of available memory.")
     args = parser.parse_args()
 
     print(f"mac_monitor → {args.host} (Updating every {args.delay}s, Ctrl-C to stop)")
+    if args.disk:
+        print("Displaying Disk Space (DSK) on the last line.")
     
     # Initialize busylib client
     bb = BusyBar(args.host)
@@ -214,8 +231,7 @@ if __name__ == "__main__":
     
     try:
         while True:
-            tick(bb)
-            # Replaced hardcoded sleep with user-defined delay
+            tick(bb, show_disk=args.disk)
             time.sleep(args.delay)
     except KeyboardInterrupt:
         print("\nstopped.")
