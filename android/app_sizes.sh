@@ -23,8 +23,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+total_packages=$#
+
 # Ensure at least one package name is provided
-if [ $# -eq 0 ]; then
+if [ $total_packages -eq 0 ]; then
     echo "Usage: $0 [-s <serial>] <package_name_1> [package_name_2] ..."
     echo "Example: $0 -s emulator-5554 com.android.chrome com.google.android.youtube"
     exit 1
@@ -39,7 +41,6 @@ fi
 # Handle device selection if no serial was provided
 if [ -z "$DEVICE_SERIAL" ]; then
     # Get a list of connected and authorized devices
-    # (Safe for Bash 3.2 / macOS and avoids process substitution)
     devices=($(adb devices | awk 'NR>1 && $2=="device" {print $1}'))
     
     device_count=${#devices[@]}
@@ -91,9 +92,31 @@ format_bytes() {
 
 total_bytes=0
 results=""
+current_package=0
 
-# 1. Gather all data first
+echo ""
+echo "Fetching data for $total_packages package(s)..."
+
+# 1. Gather all data first with a progress bar
 for pkg in "$@"; do
+    current_package=$((current_package + 1))
+    percent=$((current_package * 100 / total_packages))
+    
+    # Calculate progress bar width (40 chars total)
+    bar_width=40
+    filled_width=$((percent * bar_width / 100))
+    empty_width=$((bar_width - filled_width))
+    
+    # Build the bar strings (using standard bash loops to be universally compatible)
+    bar=""
+    for ((i=0; i<filled_width; i++)); do bar="${bar}#"; done
+    empty_bar=""
+    for ((i=0; i<empty_width; i++)); do empty_bar="${empty_bar}-"; done
+    
+    # Print the progress bar. 
+    # \r resets to the start of the line. \033[K clears the rest of the line so shorter package names don't leave artifacts.
+    printf "\r\033[K[%s%s] %d%% (%d/%d) | Checking: %s" "$bar" "$empty_bar" "$percent" "$current_package" "$total_packages" "$pkg"
+
     # Fetch all APK paths (natively handles Split APKs)
     paths=$($ADB shell pm path "$pkg" 2>/dev/null | sed 's/^package://' | tr -d '\r')
     
@@ -118,8 +141,11 @@ for pkg in "$@"; do
     total_bytes=$((total_bytes + pkg_bytes))
 done
 
-# 2. Print Header
+# Print a newline to lock in the 100% progress bar
 echo ""
+echo ""
+
+# 2. Print Header
 echo "==================================================================="
 printf "%-45s | %-15s\n" "Android Package" "APK Size"
 echo "==================================================================="
