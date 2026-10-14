@@ -89,20 +89,17 @@ format_bytes() {
     }'
 }
 
-echo ""
-echo "==================================================================="
-printf "%-45s | %-15s\n" "Android Package" "APK Size"
-echo "==================================================================="
-
 total_bytes=0
+results=""
 
-# Iterate through every package name passed as an argument
+# 1. Gather all data first
 for pkg in "$@"; do
     # Fetch all APK paths (natively handles Split APKs)
     paths=$($ADB shell pm path "$pkg" 2>/dev/null | sed 's/^package://' | tr -d '\r')
     
     if [ -z "$paths" ]; then
-        printf "%-45s | %-15s\n" "$pkg" "Not installed"
+        # Use -1 as the size so "Not installed" apps sort to the very bottom
+        results="${results}-1 ${pkg}\n"
         continue
     fi
     
@@ -117,12 +114,29 @@ for pkg in "$@"; do
         fi
     done
     
-    formatted_size=$(format_bytes "$pkg_bytes")
-    printf "%-45s | %-15s\n" "$pkg" "$formatted_size"
-    
+    results="${results}${pkg_bytes} ${pkg}\n"
     total_bytes=$((total_bytes + pkg_bytes))
 done
 
+# 2. Print Header
+echo ""
+echo "==================================================================="
+printf "%-45s | %-15s\n" "Android Package" "APK Size"
+echo "==================================================================="
+
+# 3. Sort the raw bytes numerically (descending) and print
+printf "%b" "$results" | sort -nr | while read -r size pkg; do
+    if [ -z "$pkg" ]; then continue; fi # Skip empty lines
+    
+    if [ "$size" -eq -1 ]; then
+        printf "%-45s | %-15s\n" "$pkg" "Not installed"
+    else
+        formatted_size=$(format_bytes "$size")
+        printf "%-45s | %-15s\n" "$pkg" "$formatted_size"
+    fi
+done
+
+# 4. Print Footer
 echo "==================================================================="
 printf "%-45s | %-15s\n" "TOTAL SIZE" "$(format_bytes "$total_bytes")"
 echo "==================================================================="
