@@ -3,7 +3,11 @@ import os
 import time
 import urllib.request
 from urllib.error import HTTPError
+import threading
 
+def functionForThreading(i, folder):
+    print(i)
+    urllib.request.urlretrieve("https://picsum.photos/200", f"{folder}/{i + 1000}.png")
 
 def main():
     parser = argparse.ArgumentParser(description='Download images from Picsum.')
@@ -19,15 +23,16 @@ def main():
     os.makedirs(folder, exist_ok=True)
 
     for i in range(1, count + 1):
-        print(i)
+        #print(i)
         try:
-            urllib.request.urlretrieve("https://picsum.photos/200", f"{folder}/{i}.png")
+            threading.Thread(name=f"Thread{i}", target=functionForThreading(i, folder)).start()
+            #urllib.request.urlretrieve("https://picsum.photos/200", f"{folder}/{i + 1000}.png")
         except FileNotFoundError as err:
             print(err)  # something wrong with local path
         except HTTPError as err:
             print(err)  # something wrong with url
 
-        time.sleep(0.5)
+        # time.sleep(0.5)
 
 
 if __name__ == "__main__":
