@@ -1,8 +1,9 @@
 #!/bin/bash
 
 DEVICE_SERIAL=""
+SORT_BY="apk"
 
-# Parse arguments for the optional -s flag
+# Parse arguments for flags
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -s|--serial)
@@ -13,8 +14,17 @@ while [[ $# -gt 0 ]]; do
             DEVICE_SERIAL="$2"
             shift 2
             ;;
+        --sort)
+            if [[ "$2" != "apk" && "$2" != "wifi" && "$2" != "mobile" ]]; then
+                echo "Error: Invalid sort option '$2'. Must be 'apk', 'wifi', or 'mobile'."
+                exit 1
+            fi
+            SORT_BY="$2"
+            shift 2
+            ;;
         -*)
             echo "Unknown option: $1"
+            echo "Usage: $0 [-s <serial>] [--sort apk|wifi|mobile] <package_name_1> ..."
             exit 1
             ;;
         *)
@@ -27,8 +37,8 @@ total_packages=$#
 
 # Ensure at least one package name is provided
 if [ $total_packages -eq 0 ]; then
-    echo "Usage: $0 [-s <serial>] <package_name_1> [package_name_2] ..."
-    echo "Example: $0 -s emulator-5554 com.android.chrome com.google.android.youtube"
+    echo "Usage: $0 [-s <serial>] [--sort apk|wifi|mobile] <package_name_1> [package_name_2] ..."
+    echo "Example: $0 --sort wifi com.android.chrome com.google.android.youtube"
     exit 1
 fi
 
@@ -187,7 +197,7 @@ for pkg in "$@"; do
     wifi_bytes=${wifi_bytes:-0}
     mob_bytes=${mob_bytes:-0}
 
-    # Append to results list
+    # Append to results list (Format: size pkg wifi mob)
     results="${results}${pkg_bytes} ${pkg} ${wifi_bytes} ${mob_bytes}\n"
     
     # Add to totals
@@ -209,13 +219,28 @@ else
     formatted_device_storage="Unknown"
 fi
 
-# 3. Print Header
+# 3. Configure the sort command based on user preference
+if [ "$SORT_BY" = "wifi" ]; then
+    # Sort by col 3 (Wi-Fi), fallback to col 1 (APK Size)
+    SORT_CMD="sort -k3,3nr -k1,1nr"
+    sort_label="Wi-Fi Data"
+elif [ "$SORT_BY" = "mobile" ]; then
+    # Sort by col 4 (Mobile), fallback to col 1 (APK Size)
+    SORT_CMD="sort -k4,4nr -k1,1nr"
+    sort_label="Mobile Data"
+else
+    # Default: Sort by col 1 (APK Size)
+    SORT_CMD="sort -k1,1nr"
+    sort_label="APK Size"
+fi
+
+# 4. Print Header
 echo "====================================================================================="
 printf "%-40s | %-10s | %-10s | %-11s\n" "Android Package" "APK Size" "Wi-Fi Data" "Mobile Data"
 echo "====================================================================================="
 
-# 4. Sort the raw bytes numerically by APK Size (descending) and print
-printf "%b" "$results" | sort -nr | while read -r size pkg wifi mob; do
+# 5. Execute Sort and Print Data
+printf "%b" "$results" | $SORT_CMD | while read -r size pkg wifi mob; do
     if [ -z "$pkg" ]; then continue; fi # Skip empty lines
     
     if [ "$size" -eq -1 ]; then
@@ -225,11 +250,12 @@ printf "%b" "$results" | sort -nr | while read -r size pkg wifi mob; do
     fi
 done
 
-# 5. Print Footer
+# 6. Print Footer
 echo "====================================================================================="
 printf "%-40s | %-10s | %-10s | %-11s\n" "TOTAL SELECTED" "$(format_bytes "$total_bytes")" "$(format_bytes "$total_wifi")" "$(format_bytes "$total_mob")"
 printf "%-40s | %-10s | %-10s | %-11s\n" "DEVICE STORAGE (/data)" "$formatted_device_storage" "-" "-"
 echo "====================================================================================="
 
 echo ""
+echo "Sorted By: $sort_label"
 echo "Note: APK Size measures the base and split APKs. User Data and App Cache are excluded without root."
