@@ -107,14 +107,13 @@ for pkg in "$@"; do
     filled_width=$((percent * bar_width / 100))
     empty_width=$((bar_width - filled_width))
     
-    # Build the bar strings (using standard bash loops to be universally compatible)
+    # Build the bar strings
     bar=""
     for ((i=0; i<filled_width; i++)); do bar="${bar}#"; done
     empty_bar=""
     for ((i=0; i<empty_width; i++)); do empty_bar="${empty_bar}-"; done
     
-    # Print the progress bar. 
-    # \r resets to the start of the line. \033[K clears the rest of the line so shorter package names don't leave artifacts.
+    # Print the progress bar
     printf "\r\033[K[%s%s] %d%% (%d/%d) | Checking: %s" "$bar" "$empty_bar" "$percent" "$current_package" "$total_packages" "$pkg"
 
     # Fetch all APK paths (natively handles Split APKs)
@@ -145,12 +144,22 @@ done
 echo ""
 echo ""
 
-# 2. Print Header
+# 2. Get Device Total Storage
+# Retrieves the total 1K-blocks for the /data partition (user storage space)
+storage_1k=$($ADB shell df /data 2>/dev/null | awk 'NR==2 {print $2}' | tr -d '\r')
+if [[ "$storage_1k" =~ ^[0-9]+$ ]]; then
+    device_storage_bytes=$((storage_1k * 1024))
+    formatted_device_storage=$(format_bytes "$device_storage_bytes")
+else
+    formatted_device_storage="Unknown"
+fi
+
+# 3. Print Header
 echo "==================================================================="
 printf "%-45s | %-15s\n" "Android Package" "APK Size"
 echo "==================================================================="
 
-# 3. Sort the raw bytes numerically (descending) and print
+# 4. Sort the raw bytes numerically (descending) and print
 printf "%b" "$results" | sort -nr | while read -r size pkg; do
     if [ -z "$pkg" ]; then continue; fi # Skip empty lines
     
@@ -162,9 +171,10 @@ printf "%b" "$results" | sort -nr | while read -r size pkg; do
     fi
 done
 
-# 4. Print Footer
+# 5. Print Footer
 echo "==================================================================="
-printf "%-45s | %-15s\n" "TOTAL SIZE" "$(format_bytes "$total_bytes")"
+printf "%-45s | %-15s\n" "TOTAL APP SIZE" "$(format_bytes "$total_bytes")"
+printf "%-45s | %-15s\n" "DEVICE STORAGE (/data)" "$formatted_device_storage"
 echo "==================================================================="
 
 echo ""
